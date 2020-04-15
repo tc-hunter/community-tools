@@ -1,0 +1,237 @@
+"""
+This is a 'doc string.' You can use the triple quotation marks to provide general information about the entire script, 
+portions of the script, and/or instructions on how to use (run) the script.
+"""
+from cartopy.feature import NaturalEarthFeature
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+from datetime import datetime, timedelta
+from matplotlib.colors import LinearSegmentedColormap
+from metpy.units import units
+from siphon.catalog import TDSCatalog
+from siphon.http_util import session_manager
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import matplotlib.patheffects as path_effects
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import metpy.calc as mpcalc
+import numpy as np
+import os
+import sys
+
+
+"""
+IMPORTANT:
+You need to insert your UCAR RDA username and password in the below line instead of the word username and password.
+Because they're strings, they need to be within the single quotes!
+"""
+session_manager.set_session_options(auth=('username', 'password'))
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# The custom function "fancymap()" improves the appearance of our output map
+# ----------------------------------------------------------------------------------------------------------------------
+def fancymap():
+    axes_bbox = ax.get_position()
+    left = axes_bbox.x1 + 0.015
+    bottom = axes_bbox.y0
+    width = 0.015
+    height = axes_bbox.y1 - bottom
+    cax = fig.add_axes([left, bottom, width, height])
+    cbar = plt.colorbar(im, cax=cax, ticks=clevs, orientation='vertical')
+    cbar.ax.tick_params(labelsize=10)
+    gl = ax.gridlines(crs=pc, draw_labels=False, linewidth=0.35)
+    gl.xlocator = mticker.FixedLocator(np.arange(220.,360.,10.))
+    gl.ylocator = mticker.FixedLocator(np.arange(20.,61.,5.))
+    gl2 = ax.gridlines(crs=pc, draw_labels=True, linewidth=0., alpha=0.)
+    gl2.xlabels_top = False
+    gl2.ylabels_right = False
+    gl2.xlocator = mticker.FixedLocator(np.arange(-140.,0.,10.))
+    gl2.ylocator = mticker.FixedLocator(np.arange(20.,61.,5.))
+    gl2.xformatter = LONGITUDE_FORMATTER
+    gl2.yformatter = LATITUDE_FORMATTER
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# The custom function "customize_field()" selects labels, colors, etc appropriate for the requested field
+# ----------------------------------------------------------------------------------------------------------------------
+def customize_field(ff, lev):
+    if ff == 'precip' and lev == 'surface':
+        l = [0.1,0.25,0.5,1.,1.5,2.,3.,4.,5.,6.,7.,8.,9.,10.]  # levels for 6-h average precip rate
+        cmap0 = plt.cm.Greys(0)
+        cmap1 = plt.cm.Greens(np.linspace(0.2,1.,9))
+        cmap2 = plt.cm.gist_rainbow_r(np.linspace(0.81,1.,7))
+        colors = np.vstack((cmap0,cmap1,cmap2))
+        cm = LinearSegmentedColormap.from_list('my_colormap',colors)
+        cl = l.copy()
+        ex = 'both'
+        ll = np.arange(948.,1033.,2.)  # levels for MSLP (hPa)
+        ft = '6-h average precipitation rate (mm/h) and MSLP (hPa)'
+    if ff == 'wind':
+        cm = plt.cm.BuPu
+        if lev == '300':
+            l = np.arange(50.,171.,20.)  # levels for wind speed (kt)
+            ll = np.arange(8000.,10001.,100.)  # levels for heights (m)
+        if lev == '500':
+            l = np.arange(30.,131.,20.)  # levels for wind speed (kt)
+            ll = np.arange(5000.,6101.,50.)  # levels for heights (m)
+        cl = l.copy()
+        ex = 'max'
+        ft = '%s-hPa wind (kt) and geopotential height (m)' % lev
+    if ff == 'vort':  # and lev == '500':
+        cm = plt.cm.hot_r
+        l = np.arange(1.,51.)  # levels for vorticity (10^-5 s^-1)
+        cl = np.arange(5.,51.,5.)
+        ex = 'max'
+        if lev == '500':
+            ll = np.arange(5000.,6101.,50.)  # levels for heights (m)
+        if lev == '300':
+            ll = np.arange(8000.,10001.,100.)  # levels for heights (m)
+        ft = '%s-hPa wind, geopotential height (m), and relative vorticity ($\mathregular{10^{-5} s^{-1}}$)' % lev
+    if ff == 'temp' and lev == '700':
+        cm = plt.cm.BrBG
+        l = np.arange(10.,91.,5.)  # levels for relative humidity (%)
+        cl = np.arange(10.,91.,10.)
+        ex = 'both'
+        ll = np.arange(-30.,31.,3.)  # levels for temperature (deg C)
+        ft = '700-hPa wind, relative humidity (%), and temperature ($^\circ$C)'
+    return cm, l, cl, ex, ll, ft  # colormap, shaded contour levels, labeled contour levels, how colorbar is extended, 
+                                  # line contour levels, & plot title
+
+
+"""
+The main script is below.
+
+This script expects command-line inputs on execution.
+
+Example execution to DISPLAY a map of 300-hPa wind and heights for the 72-hour forecast valid at 00 UTC 1 Jan 2020:
+    python EXAMPLE.py wind 300 2020010100 72
+Example execution to SAVE the above map (the added "1" at the end means a map will be SAVED instead of DISPLAYED):
+    python EXAMPLE.py wind 300 2020010100 72 1
+
+Map combination list:
+    wind 300 / vort 300 / wind 500 / vort 500 / temp 700 / precip surface
+"""
+field = sys.argv[1]  # options: wind, vort, temp, precip
+plev = sys.argv[2]   # options: 300, 500, 700, surface
+dt = sys.argv[3]     # the requested valid time in YYYYMMDDHH format
+ForecastHour = sys.argv[4].zfill(3)  # the forecast hour we want
+if len(sys.argv) > 5:
+    pname = '%s%s_%s_%sh.png' % (field,plev,dt,ForecastHour)
+    if os.path.exists(pname) is True:
+        print('% already exists! Exiting...' % pname)
+        exit()
+    else:
+        print('Generating %s...' % pname)
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Figure out needed GFS file based on command-line input and define some helpful Cartopy variables
+# ----------------------------------------------------------------------------------------------------------------------
+DesiredTime = datetime.strptime(dt,'%Y%m%d%H')  # This is a 'datetime' variable for the desired map date and time
+ModelInit = DesiredTime - timedelta(hours=int(ForecastHour))  # Get the model init time for DesiredTime and ForecastHour
+pc = ccrs.PlateCarree()
+states = NaturalEarthFeature(category='cultural', scale='50m', facecolor='none', name='admin_1_states_provinces_shp')
+catUrl = ModelInit.strftime('https://rda.ucar.edu/thredds/catalog/files/g/ds084.1/%Y/%Y%m%d/catalog.xml')
+datasetName = ModelInit.strftime('gfs.0p25.%Y%m%d%H.f') + ForecastHour + '.grib2'
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Access file on RDA server and define CONUS region (to avoid downloading the global GFS field)
+# ----------------------------------------------------------------------------------------------------------------------
+catalog = TDSCatalog(catUrl)  # We're using 'TDSCatalog' from the 'siphon' Python package to access the above URL
+ds = catalog.datasets[datasetName]  # Let's get the 24-hour forecast file
+dataset = ds.remote_access()  # Calls remote_access() -- this gives us access to the file
+latitude = dataset.variables['lat'][:]  # Get 1-D array with latitude values
+rows = np.where((latitude>=20.)&(latitude<=55.))[0]  # List of locations within 20-55N
+r0, r1 = [min(rows), max(rows)+1]
+longitude = dataset.variables['lon'][:]  # Get 1-D array with longitude values
+cols = np.where((longitude>=220.)&(longitude<=300.))[0]  # List of locations within 120-60W (0-360 longitude format)
+c0, c1 = [min(cols), max(cols)+1]
+glon, glat = np.meshgrid(longitude[c0:c1], latitude[r0:r1])
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Request fields from remote file depending on the selected map of interest
+# ----------------------------------------------------------------------------------------------------------------------
+var_list = list(dataset.variables)  # list of all variable names in 'dataset' (helpful when developing or debugging)
+bcolor = 'blue'  # wind barb color
+ccolor = 'black'  # contour color (the lines for geopotential height, etc.)
+lw = 1.5  # line width for contours
+if field == 'wind' or field == 'vort' or field == 'temp':
+    ## get zonal wind field
+    uwind = dataset.variables['u-component_of_wind_isobaric']
+    coords = uwind.coordinates.split()
+    levels = dataset.variables[coords[2]]
+    lindex = np.where(levels[:]==float(plev)*100.)[0][0]
+    uwind = (uwind[0,lindex,r0:r1,c0:c1] * units('m/s')).to(units('kt'))  # pull subregion for desired level
+    ## get meridional wind field
+    vwind = dataset.variables['v-component_of_wind_isobaric']
+    coords = vwind.coordinates.split()
+    levels = dataset.variables[coords[2]]
+    lindex = np.where(levels[:]==float(plev)*100.)[0][0]
+    vwind = (vwind[0,lindex,r0:r1,c0:c1] * units('m/s')).to(units('kt'))  # pull subregion for desired level
+    ## get geopotential height field
+    ght = dataset.variables['Geopotential_height_isobaric']
+    coords = ght.coordinates.split()
+    levels = dataset.variables[coords[2]]
+    lindex = np.where(levels[:]==float(plev)*100.)[0][0]
+    datal = ght[0,lindex,r0:r1,c0:c1]  # get CONUS subregion and desired level
+if field == 'vort':
+    ## compute relative vorticity from absolute vorticity
+    absv = dataset.variables['Absolute_vorticity_isobaric']
+    coords = absv.coordinates.split()
+    levels = dataset.variables[coords[2]]
+    lindex = np.where(levels[:]==float(plev)*100.)[0][0]
+    absv = absv[0,lindex,r0:r1,c0:c1]  # this is ABSOLUTE vorticity
+    planetary = 2.*(7.2921*10.**-5.)*np.sin(np.radians(glat))  # compute PLANETARY vorticity
+    data = (absv - planetary) * 10**5.  # now compute RELATIVE vorticity
+if field == 'wind' and int(plev) <= 500:
+    ## only compute wind speed for 500- and 300-hPa 'wind' maps
+    data = mpcalc.wind_speed(uwind, vwind).m
+if plev == '700':
+    ## get relative humidity field
+    data = dataset.variables['Relative_humidity_isobaric']
+    coords = data.coordinates.split()
+    levels = dataset.variables[coords[2]]
+    lindex = np.where(levels[:]==float(plev)*100.)[0][0]
+    data = data[0,lindex,r0:r1,c0:c1]
+    ## get temperature field
+    datal = dataset.variables['Temperature_isobaric']
+    coords = datal.coordinates.split()
+    levels = dataset.variables[coords[2]]
+    lindex = np.where(levels[:]==float(plev)*100.)[0][0]
+    datal = datal[0,lindex,r0:r1,c0:c1] - 273.15  # convert from Kelvin to degrees Celsius
+    bcolor = 'black'
+if plev == 'surface':
+    ## get surface fields
+    datal = dataset.variables['MSLP_Eta_model_reduction_msl']  # do NOT use 'Pressure_reduced_to_MSL_msl'!!!
+    datal = datal[0,r0:r1,c0:c1] / 100.  # convert from Pa to hPa
+    data = dataset.variables['Precipitation_rate_surface_6_Hour_Average']
+    data = data[0,r0:r1,c0:c1] * (60.*60.)  # convert from per second to per hours
+    ccolor = 'blue'
+    lw = 1.
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Plot the desired map with a custom title for 1) the plotted fields and 2) the displayed time + forecast hour
+# ----------------------------------------------------------------------------------------------------------------------
+fig = plt.figure(figsize=(14,10))
+ax = plt.axes(projection=ccrs.Mercator(central_longitude=180., min_latitude=21., max_latitude=51.))
+ax.set_extent([232.,295.,21.,51.], crs=pc)  # set region bounds for map
+ax.coastlines('50m', linewidth=1.)
+ax.add_feature(states, linewidth=1., edgecolor='black')
+ax.add_feature(cfeature.LAKES.with_scale('50m'), edgecolor='k', facecolor='none')
+cmap, levs, clevs, extend, lines, field_title = customize_field(field, plev)
+im = ax.contourf(glon, glat, data, levs, cmap=cmap, extend=extend, transform=pc)  # 'data' is the shaded variable here
+cs = ax.contour(glon, glat, datal, lines, colors=ccolor, linewidths=lw, transform=pc)  # 'datal' is for contours
+plt.clabel(cs, fmt='%d')
+if plev != 'surface':
+    ax.barbs(glon, glat, uwind.to('kt').m, vwind.to('kt').m, pivot='middle', color=bcolor, regrid_shape=16, 
+             transform=pc)
+fancymap()
+ax.set_title(field_title, loc='left', fontsize=14)
+ax.set_title('%d-h GFS forecast valid '%int(ForecastHour) + DesiredTime.strftime('%H UTC %d %b %Y'), loc='right')
+if len(sys.argv) == 5:
+    plt.show()
+else:
+    plt.savefig(pname, bbox_inches='tight', pad_inches=0.03)  # Save map and get rid of large whitespace borders
+    plt.close()
+
+
