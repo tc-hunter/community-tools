@@ -5,13 +5,12 @@ portions of the script, and/or instructions on how to use (run) the script.
 from cartopy.feature import NaturalEarthFeature
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 from datetime import datetime, timedelta
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, from_levels_and_colors
 from metpy.units import units
 from siphon.catalog import TDSCatalog
 from siphon.http_util import session_manager
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-import matplotlib.patheffects as path_effects
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import metpy.calc as mpcalc
@@ -58,17 +57,27 @@ def fancymap():
 def customize_field(ff, lev):
     if ff == 'precip' and lev == 'surface':
         l = [0.1,0.25,0.5,1.,1.5,2.,3.,4.,5.,6.,7.,8.,9.,10.]  # levels for 6-h average precip rate
-        cmap0 = plt.cm.Greys(0)
-        cmap1 = plt.cm.Greens(np.linspace(0.2,1.,9))
-        cmap2 = plt.cm.gist_rainbow_r(np.linspace(0.81,1.,7))
+        cmap0 = plt.get_cmap('Greys')(0)
+        cmap1 = plt.get_cmap('Greens')(np.linspace(0.2,1.,9))
+        cmap2 = plt.get_cmap('gist_rainbow_r')(np.linspace(0.81,1.,7))
         colors = np.vstack((cmap0,cmap1,cmap2))
         cm = LinearSegmentedColormap.from_list('my_colormap',colors)
         cl = l.copy()
         ex = 'both'
         ll = np.arange(948.,1033.,2.)  # levels for MSLP (hPa)
         ft = '6-h average precipitation rate (mm/h) and MSLP (hPa)'
+    if ff == 'snow' and lev == 'surface':
+        l = np.concatenate((np.array([0.1,0.25]),np.arange(0.5,12.1,0.5)))  # levels for snowfall accumulation
+        cmap0 = plt.get_cmap('BuPu')(np.linspace(0.,1.,14))
+        cmap1 = plt.get_cmap('Greens')(np.linspace(0.4,1.,13))
+        colors = np.vstack((cmap0,cmap1))
+        cm, nn = from_levels_and_colors(l, colors, extend='both')
+        cl = np.concatenate((np.array([0.1,1.]),np.arange(2.,12.1,1.)))
+        ex = 'both'
+        ll = np.arange(948.,1051.,4.)  # levels for MSLP (hPa)
+        ft = '6-hourly accumulated snowfall (10:1 ratio; inches) and MSLP (hPa)'
     if ff == 'wind':
-        cm = plt.cm.BuPu
+        cm = plt.get_cmap('BuPu')
         if lev == '300':
             l = np.arange(50.,171.,20.)  # levels for wind speed (kt)
             ll = np.arange(8000.,10001.,100.)  # levels for heights (m)
@@ -79,7 +88,7 @@ def customize_field(ff, lev):
         ex = 'max'
         ft = '%s-hPa wind (kt) and geopotential height (m)' % lev
     if ff == 'vort':  # and lev == '500':
-        cm = plt.cm.hot_r
+        cm = plt.get_cmap('hot_r')
         l = np.arange(1.,51.)  # levels for vorticity (10^-5 s^-1)
         cl = np.arange(5.,51.,5.)
         ex = 'max'
@@ -89,14 +98,14 @@ def customize_field(ff, lev):
             ll = np.arange(8000.,10001.,100.)  # levels for heights (m)
         ft = '%s-hPa wind, geopotential height (m), and relative vorticity ($\mathregular{10^{-5} s^{-1}}$)' % lev
     if ff == 'temp' and lev == '700':
-        cm = plt.cm.BrBG
+        cm = plt.get_cmap('BrBG')
         l = np.arange(10.,91.,5.)  # levels for relative humidity (%)
         cl = np.arange(10.,91.,10.)
         ex = 'both'
         ll = np.arange(-30.,31.,3.)  # levels for temperature (deg C)
         ft = '700-hPa wind, relative humidity (%), and temperature ($^\circ$C)'
-    return cm, l, cl, ex, ll, ft  # colormap, shaded contour levels, labeled contour levels, how colorbar is extended, 
-                                  # line contour levels, & plot title
+    return cm, l, cl, ex, ll, ft, nn  # colormap, shaded contour levels, shown contour levels, how colorbar is extended, 
+                                      # line contour levels, plot title, and colormap norm
 
 
 """
@@ -105,12 +114,12 @@ The main script is below.
 This script expects command-line inputs on execution.
 
 Example execution to DISPLAY a map of 300-hPa wind and heights for the 72-hour forecast valid at 00 UTC 1 Jan 2020:
-    python EXAMPLE.py wind 300 2020010100 72
+    python GFS_from_UCAR_RDA.py wind 300 2020010100 72
 Example execution to SAVE the above map (the added "1" at the end means a map will be SAVED instead of DISPLAYED):
-    python EXAMPLE.py wind 300 2020010100 72 1
+    python GFS_from_UCAR_RDA.py wind 300 2020010100 72 1
 
 Map combination list:
-    wind 300 / vort 300 / wind 500 / vort 500 / temp 700 / precip surface
+    wind 300 / vort 300 / wind 500 / vort 500 / temp 700 / precip surface / snow surface
 """
 field = sys.argv[1]  # options: wind, vort, temp, precip
 plev = sys.argv[2]   # options: 300, 500, 700, surface
@@ -146,7 +155,7 @@ r0, r1 = [min(rows), max(rows)+1]
 longitude = dataset.variables['lon'][:]  # Get 1-D array with longitude values
 cols = np.where((longitude>=220.)&(longitude<=300.))[0]  # List of locations within 120-60W (0-360 longitude format)
 c0, c1 = [min(cols), max(cols)+1]
-glon, glat = np.meshgrid(longitude[c0:c1], latitude[r0:r1])
+glon, glat = np.meshgrid(longitude[c0:c1], latitude[r0:r1])  # Create 2-D latitude and longitude grids for cartopy use
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Request fields from remote file depending on the selected map of interest
@@ -200,13 +209,23 @@ if plev == '700':
     lindex = np.where(levels[:]==float(plev)*100.)[0][0]
     datal = datal[0,lindex,r0:r1,c0:c1] - 273.15  # convert from Kelvin to degrees Celsius
     bcolor = 'black'
-if plev == 'surface':
-    ## get surface fields
+if field == 'precip' and plev == 'surface':
+    ## get MSLP and 6-hour-averaged precipitation rate
     datal = dataset.variables['MSLP_Eta_model_reduction_msl']  # do NOT use 'Pressure_reduced_to_MSL_msl'!!!
     datal = datal[0,r0:r1,c0:c1] / 100.  # convert from Pa to hPa
     data = dataset.variables['Precipitation_rate_surface_6_Hour_Average']
     data = data[0,r0:r1,c0:c1] * (60.*60.)  # convert from per second to per hours
     ccolor = 'blue'
+    lw = 1.
+if field == 'snow' and plev == 'surface':
+    ## get MSLP and accumulated snowfall
+    datal = dataset.variables['MSLP_Eta_model_reduction_msl']  # do NOT use 'Pressure_reduced_to_MSL_msl'!!!
+    datal = datal[0, r0:r1, c0:c1] / 100.  # convert from Pa to hPa
+    prcp = dataset.variables['Precipitation_rate_surface_6_Hour_Average']  # units: kg m**-2 s**-1
+    prcp = prcp[0,r0:r1,c0:c1] * (10.*60.*60.*6.) / 25.4
+    snow_cat = dataset.variables['Categorical_Snow_surface_6_Hour_Average']
+    snow_cat = snow_cat[0,r0:r1,c0:c1]
+    data = prcp * snow_cat  # keep only the values categorized as snow
     lw = 1.
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -218,8 +237,11 @@ ax.set_extent([232.,295.,21.,51.], crs=pc)  # set region bounds for map
 ax.coastlines('50m', linewidth=1.)
 ax.add_feature(states, linewidth=1., edgecolor='black')
 ax.add_feature(cfeature.LAKES.with_scale('50m'), edgecolor='k', facecolor='none')
-cmap, levs, clevs, extend, lines, field_title = customize_field(field, plev)
-im = ax.contourf(glon, glat, data, levs, cmap=cmap, extend=extend, transform=pc)  # 'data' is the shaded variable here
+cmap, levs, clevs, extend, lines, field_title, norm = customize_field(field, plev)
+if norm != '':
+    im = ax.contourf(glon, glat, data, levs, cmap=cmap, norm=norm, extend=extend, transform=pc)
+else:
+    im = ax.contourf(glon, glat, data, levs, cmap=cmap, extend=extend, transform=pc)  # 'data' is the shaded variable
 cs = ax.contour(glon, glat, datal, lines, colors=ccolor, linewidths=lw, transform=pc)  # 'datal' is for contours
 plt.clabel(cs, fmt='%d')
 if plev != 'surface':
@@ -233,5 +255,4 @@ if len(sys.argv) == 5:
 else:
     plt.savefig(pname, bbox_inches='tight', pad_inches=0.03)  # Save map and get rid of large whitespace borders
     plt.close()
-
 
