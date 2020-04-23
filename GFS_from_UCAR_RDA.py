@@ -56,27 +56,33 @@ def fancymap():
 # ----------------------------------------------------------------------------------------------------------------------
 def customize_field(ff, lev):
     nn = ''  # ensure colormap norm variable is an empty string if otherwise undefined below
-    if ff == 'precip' and lev == 'surface':
-        l = [0.1,0.25,0.5,1.,1.5,2.,3.,4.,5.,6.,7.,8.,9.,10.]  # levels for 6-h average precip rate
-        cmap0 = plt.get_cmap('Greys')(0)
-        cmap1 = plt.get_cmap('Greens')(np.linspace(0.2,1.,9))
-        cmap2 = plt.get_cmap('gist_rainbow_r')(np.linspace(0.81,1.,7))
-        colors = np.vstack((cmap0,cmap1,cmap2))
-        cm = LinearSegmentedColormap.from_list('my_colormap',colors)
-        cl = l.copy()
-        ex = 'both'
-        ll = np.arange(948.,1033.,2.)  # levels for MSLP (hPa)
-        ft = '6-h average precipitation rate (mm/h) and MSLP (hPa)'
-    if ff == 'snow' and lev == 'surface':
-        l = np.concatenate((np.array([0.1,0.25]),np.arange(0.5,12.1,0.5)))  # levels for snowfall accumulation
-        cmap0 = plt.get_cmap('BuPu')(np.linspace(0.,1.,14))
-        cmap1 = plt.get_cmap('Greens')(np.linspace(0.4,1.,13))
-        colors = np.vstack((cmap0,cmap1))
-        cm, nn = from_levels_and_colors(l, colors, extend='both')
-        cl = np.concatenate((np.array([0.1,1.]),np.arange(2.,12.1,1.)))
-        ex = 'both'
+    if lev == 'surface':
         ll = np.arange(948.,1051.,4.)  # levels for MSLP (hPa)
-        ft = '6-hourly accumulated snowfall (10:1 ratio; inches) and MSLP (hPa)'
+        if ff == 'precip':
+            l = [0.1,0.25,0.5,1.,1.5,2.,3.,4.,5.,6.,7.,8.,9.,10.]  # levels for 6-h average precip rate
+            cmap0 = plt.get_cmap('Greys')(0)
+            cmap1 = plt.get_cmap('Greens')(np.linspace(0.2,1.,9))
+            cmap2 = plt.get_cmap('gist_rainbow_r')(np.linspace(0.81,1.,7))
+            colors = np.vstack((cmap0,cmap1,cmap2))
+            cm = LinearSegmentedColormap.from_list('my_colormap',colors)
+            cl = l.copy()
+            ex = 'both'
+            ft = '6-h average precipitation rate (mm/h) and MSLP (hPa)'
+        if ff == 'snow':
+            l = np.concatenate((np.array([0.1,0.25]),np.arange(0.5,12.1,0.5)))  # levels for snowfall accumulation
+            cmap0 = plt.get_cmap('BuPu')(np.linspace(0.,1.,14))
+            cmap1 = plt.get_cmap('Greens')(np.linspace(0.4,1.,13))
+            colors = np.vstack((cmap0,cmap1))
+            cm, nn = from_levels_and_colors(l, colors, extend='both')
+            cl = np.concatenate((np.array([0.1,1.]),np.arange(2.,12.1,1.)))
+            ex = 'both'
+            ft = '6-hourly accumulated snowfall (10:1 ratio; inches) and MSLP (hPa)'
+        if ff == 'srh':
+            l = np.arange(0.,801.,10.)
+            cm = plt.get_cmap('hot_r')
+            cl = np.arange(0.,801.,50.)
+            ex = 'both'
+            ft = '0-1.5km storm-relative helicity ($\mathregular{m^{2} s^{-2}}$) and MSLP (hPa)'
     if ff == 'wind':
         cm = plt.get_cmap('BuPu')
         if lev == '300':
@@ -120,7 +126,7 @@ Example execution to SAVE the above map (the added "1" at the end means a map wi
     python GFS_from_UCAR_RDA.py wind 300 2020010100 72 1
 
 Map combination list:
-    wind 300 / vort 300 / wind 500 / vort 500 / temp 700 / precip surface / snow surface
+    wind 300 / vort 300 / wind 500 / vort 500 / temp 700 / precip surface / snow surface / srh surface
 """
 field = sys.argv[1]  # options: wind, vort, temp, precip
 plev = sys.argv[2]   # options: 300, 500, 700, surface
@@ -210,24 +216,26 @@ if plev == '700':
     lindex = np.where(levels[:]==float(plev)*100.)[0][0]
     datal = datal[0,lindex,r0:r1,c0:c1] - 273.15  # convert from Kelvin to degrees Celsius
     bcolor = 'black'
-if field == 'precip' and plev == 'surface':
-    ## get MSLP and 6-hour-averaged precipitation rate
+if plev == 'surface':
     datal = dataset.variables['MSLP_Eta_model_reduction_msl']  # do NOT use 'Pressure_reduced_to_MSL_msl'!!!
     datal = datal[0,r0:r1,c0:c1] / 100.  # convert from Pa to hPa
-    data = dataset.variables['Precipitation_rate_surface_6_Hour_Average']
-    data = data[0,r0:r1,c0:c1] * (60.*60.)  # convert from per second to per hours
-    ccolor = 'blue'
     lw = 1.
-if field == 'snow' and plev == 'surface':
-    ## get MSLP and accumulated snowfall
-    datal = dataset.variables['MSLP_Eta_model_reduction_msl']  # do NOT use 'Pressure_reduced_to_MSL_msl'!!!
-    datal = datal[0, r0:r1, c0:c1] / 100.  # convert from Pa to hPa
-    prcp = dataset.variables['Precipitation_rate_surface_6_Hour_Average']  # units: kg m**-2 s**-1
-    prcp = prcp[0,r0:r1,c0:c1] * (10.*60.*60.*6.) / 25.4
-    snow_cat = dataset.variables['Categorical_Snow_surface_6_Hour_Average']
-    snow_cat = snow_cat[0,r0:r1,c0:c1]
-    data = prcp * snow_cat  # keep only the values categorized as snow
-    lw = 1.
+    if field == 'precip':
+        ## get 6-hour-averaged precipitation rate
+        data = dataset.variables['Precipitation_rate_surface_6_Hour_Average']
+        data = data[0,r0:r1,c0:c1] * (60.*60.)  # convert from per second to per hours
+        ccolor = 'blue'
+    if field == 'snow':
+        ## get 6-hour accumulated snowfall
+        prcp = dataset.variables['Precipitation_rate_surface_6_Hour_Average']  # units: kg m**-2 s**-1
+        prcp = prcp[0,r0:r1,c0:c1] * (10.*60.*60.*6.) / 25.4
+        snow_cat = dataset.variables['Categorical_Snow_surface_6_Hour_Average']
+        snow_cat = snow_cat[0,r0:r1,c0:c1]
+        data = prcp * snow_cat  # keep only the values categorized as snow
+    if field == 'srh' and plev == 'surface':
+        ## get storm-relative helicity (0-1500m)
+        data = dataset.variables['Storm_relative_helicity_height_above_ground_layer']
+        data = data[0,0,r0:r1,c0:c1]
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Plot the desired map with a custom title for 1) the plotted fields and 2) the displayed time + forecast hour
