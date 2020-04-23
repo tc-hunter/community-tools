@@ -83,6 +83,15 @@ def customize_field(ff, lev):
             cl = np.arange(0.,801.,50.)
             ex = 'both'
             ft = '0-1.5km storm-relative helicity ($\mathregular{m^{2} s^{-2}}$) and MSLP (hPa)'
+        if ff == 'gust':
+            l = np.arange(0.,101.,2.)  # levels for wind gust magnitude
+            cmap0 = plt.get_cmap('BuPu')(np.linspace(0.,1.,26))
+            cmap1 = plt.get_cmap('YlOrRd')(np.linspace(0.1,1.,26))
+            colors = np.vstack((cmap0,cmap1))
+            cm, nn = from_levels_and_colors(l, colors, extend='both')
+            cl = np.arange(0.,101.,10.)
+            ex = 'max'
+            ft = 'surface wind gust (kt) and MSLP (hPa)'
     if ff == 'wind':
         cm = plt.get_cmap('BuPu')
         if lev == '300':
@@ -126,9 +135,10 @@ Example execution to SAVE the above map (the added "1" at the end means a map wi
     python GFS_from_UCAR_RDA.py wind 300 2020010100 72 1
 
 Map combination list:
-    wind 300 / vort 300 / wind 500 / vort 500 / temp 700 / precip surface / snow surface / srh surface
+    wind 300 / vort 300 / wind 500 / vort 500 / temp 700
+    precip surface / snow surface / srh surface / gust surface
 """
-field = sys.argv[1]  # options: wind, vort, temp, precip
+field = sys.argv[1]  # options: wind, vort, temp, precip, snow, srh, gust
 plev = sys.argv[2]   # options: 300, 500, 700, surface
 dt = sys.argv[3]     # the requested valid time in YYYYMMDDHH format
 ForecastHour = sys.argv[4].zfill(3)  # the forecast hour we want
@@ -232,10 +242,14 @@ if plev == 'surface':
         snow_cat = dataset.variables['Categorical_Snow_surface_6_Hour_Average']
         snow_cat = snow_cat[0,r0:r1,c0:c1]
         data = prcp * snow_cat  # keep only the values categorized as snow
-    if field == 'srh' and plev == 'surface':
+    if field == 'srh':
         ## get storm-relative helicity (0-1500m)
         data = dataset.variables['Storm_relative_helicity_height_above_ground_layer']
         data = data[0,0,r0:r1,c0:c1]
+    if field == 'gust':
+        ## get wind gust field at the surface (I assume that's 10 m)
+        data = dataset.variables['Wind_speed_gust_surface']
+        data = data[0,r0:r1,c0:c1] * 1.943844  # convert from m/s to kt
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Plot the desired map with a custom title for 1) the plotted fields and 2) the displayed time + forecast hour
