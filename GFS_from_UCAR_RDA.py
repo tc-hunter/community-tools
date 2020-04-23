@@ -55,6 +55,7 @@ def fancymap():
 # The custom function "customize_field()" selects labels, colors, etc appropriate for the requested field
 # ----------------------------------------------------------------------------------------------------------------------
 def customize_field(ff, lev):
+    nn = ''  # ensure colormap norm variable is an empty string if otherwise undefined below
     if ff == 'precip' and lev == 'surface':
         l = [0.1,0.25,0.5,1.,1.5,2.,3.,4.,5.,6.,7.,8.,9.,10.]  # levels for 6-h average precip rate
         cmap0 = plt.get_cmap('Greys')(0)
