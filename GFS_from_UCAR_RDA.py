@@ -92,6 +92,13 @@ def customize_field(ff, lev):
             cl = np.arange(0.,101.,10.)
             ex = 'max'
             ft = 'surface wind gust (kt) and MSLP (hPa)'
+        if ff == 'cape':
+            l = np.arange(0.,4001.,100.)  # levels for mixed-layer CAPE
+            cm = plt.get_cmap('gnuplot2_r')
+            cl = np.arange(0.,4001.,500.)
+            ex = 'max'
+            ft = '0-90mb mixed-layer CAPE (J/kg) and CIN (J/kg)'
+            ll = np.arange(-1000.,-99.,100.)  # levels for mixed-layer CIN
     if ff == 'wind':
         cm = plt.get_cmap('BuPu')
         if lev == '300':
@@ -136,11 +143,11 @@ Example execution to SAVE the above map (the added "1" at the end means a map wi
 
 Map combination list:
     wind 300 / vort 300 / wind 500 / vort 500 / temp 700
-    precip surface / snow surface / srh surface / gust surface
+    precip surface / snow surface / srh surface / gust surface / cape surface
 """
-field = sys.argv[1]  # options: wind, vort, temp, precip, snow, srh, gust
-plev = sys.argv[2]   # options: 300, 500, 700, surface
-dt = sys.argv[3]     # the requested valid time in YYYYMMDDHH format
+field = sys.argv[1].lower()  # options: wind, vort, temp, precip, snow, srh, gust, cape
+plev = sys.argv[2].lower()   # options: 300, 500, 700, surface
+dt = sys.argv[3]             # the requested valid time in YYYYMMDDHH format
 ForecastHour = sys.argv[4].zfill(3)  # the forecast hour we want
 if len(sys.argv) > 5:
     pname = '%s%s_%s_%sh.png' % (field,plev,dt,ForecastHour)
@@ -250,6 +257,12 @@ if plev == 'surface':
         ## get wind gust field at the surface (I assume that's 10 m)
         data = dataset.variables['Wind_speed_gust_surface']
         data = data[0,r0:r1,c0:c1] * 1.943844  # convert from m/s to kt
+    if field == 'cape':
+        ## get mixed-layer CAPE and CIN
+        data = dataset.variables['Convective_available_potential_energy_pressure_difference_layer']
+        data = data[0,0,r0:r1,c0:c1]  # pressure_difference_layer2 options: 90mb (0) or 127.5mb (1)
+        datal = dataset.variables['Convective_inhibition_pressure_difference_layer']
+        datal = datal[0,0,r0:r1,c0:c1]
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Plot the desired map with a custom title for 1) the plotted fields and 2) the displayed time + forecast hour
