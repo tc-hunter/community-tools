@@ -68,12 +68,12 @@ def onetrack(season, basin, identifier, printalert=True):
     #### Load desired HURDAT2 database
     if b2 == 'AL':
         ## North Atlantic HURDAT2 file name (updated for 2020)
-        FileName = '/RaiuData/datasets/tracks/hurdat2-1851-2020-052921.txt'
+        FileName = 'hurdat2-1851-2020-052921.txt'
         if os.path.exists(FileName) is False:
             FileName = 'https://www.nhc.noaa.gov/data/hurdat/hurdat2-1851-2020-052921.txt'
     else:
         ## eastern and central North Pacific HURDAT2 file name (updated for 2020)
-        FileName = '/RaiuData/datasets/tracks/hurdat2-nepac-1949-2020-043021a.txt'
+        FileName = 'hurdat2-nepac-1949-2020-043021a.txt'
         if os.path.exists(FileName) is False:
             FileName = 'https://www.nhc.noaa.gov/data/hurdat/hurdat2-nepac-1949-2020-043021a.txt'
     hurdat2 = np.genfromtxt(FileName, dtype=str, delimiter='\n')
