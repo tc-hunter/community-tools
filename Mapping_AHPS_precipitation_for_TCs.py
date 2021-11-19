@@ -15,6 +15,8 @@
 #    Tested with Python 3.9.7
 #    Example usage:
 #    >>> python Mapping_AHPS_precipitation_for_TCs.py AL 2020 Laura
+#    
+#    Example output map: http://arashi.geosci.msstate.edu/python/2020Laura_rainfall_1day_20200828.png
 ####
 from datetime import datetime, timedelta
 from glob import glob
