@@ -210,7 +210,7 @@ for t in tindices:
     ax.add_feature(counties, edgecolor='gray', facecolor='none', linewidth=0.4, zorder=5)
     im = ax.pcolormesh(lon, lat, ds.observation.values, cmap=cmap, shading='nearest', vmin=0, vmax=12, transform=pc, 
                        zorder=1)
-    addgridlines(mlon, xlon, mlat, xlat)
+    addgridlines(mlat, xlat, mlon, xlon)
     addcolorbar(fig, ax, im, levs[::2])  # label colorbar ticks using every other shaded interval
     ax.spines['geo'].set_zorder(100)  # ensure figure's map border is visible over other geographic lines
     ax.set_title(date.strftime('24-hour rainfall [inches] ending 12 UTC %d %b %Y'), loc='right')
