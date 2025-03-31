@@ -167,7 +167,7 @@ DesiredTime = datetime.strptime(dt,'%Y%m%d%H')  # This is a 'datetime' variable 
 ModelInit = DesiredTime - timedelta(hours=int(ForecastHour))  # Get the model init time for DesiredTime and ForecastHour
 pc = ccrs.PlateCarree()
 states = NaturalEarthFeature(category='cultural', scale='50m', facecolor='none', name='admin_1_states_provinces_shp')
-catUrl = ModelInit.strftime('https://rda.ucar.edu/thredds/catalog/files/g/ds084.1/%Y/%Y%m%d/catalog.xml')
+catUrl = ModelInit.strftime('https://thredds.rda.ucar.edu/thredds/catalog/files/g/d084001/%Y/%Y%m%d/catalog.xml')
 datasetName = ModelInit.strftime('gfs.0p25.%Y%m%d%H.f') + ForecastHour + '.grib2'
 
 # ----------------------------------------------------------------------------------------------------------------------
